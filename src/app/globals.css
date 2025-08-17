@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #1a1a1a;
+  color: white;
+}
+
+.main-bg::before {
+  content: "";
+  background-image: url('/background-grid.jpg'); /* आपकी इमेज */
+  background-size: cover;
+  background-position: center top;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  opacity: 0.15;
+  z-index: -1;
+}
+
+/* === Browser Autofill Style Override === */
+/* यह कोड इनपुट बॉक्स की व्हाइट बैकग्राउंड को ठीक करेगा */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+    -webkit-text-fill-color: #ffffff !important; /* टेक्स्ट का रंग सफेद रखेगा */
+    -webkit-box-shadow: 0 0 0px 1000px #1a1a2e inset !important; /* बैकग्राउंड को डार्क रखेगा */
+    transition: background-color 5000s ease-in-out 0s; /* ब्राउज़र के कलर बदलने को रोकेगा */
+}
