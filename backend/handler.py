@@ -54,11 +54,11 @@ def get_instagram_profile(event, context):
         cache_table = dynamodb.Table(os.environ.get('CACHE_TABLE_NAME'))
         ttl = int(os.environ.get('CACHE_TTL_SECONDS'))
         username = event.get('queryStringParameters', {}).get('url')
-
+        if not username: return {'statusCode': 400, 'body': json.dumps({'error': 'Username is required.'})}
+        
         cached_data = get_from_cache(username, cache_table)
         if cached_data: return {'statusCode': 200, 'headers': {'Access-Control-Allow-Origin': '*'}, 'body': json.dumps(cached_data)}
-
-        # --- Naya, Sahi Scraping Flow ---
+        
         response_json = None
         try:
             # 1. Primary: ScrapingBee Classic
@@ -68,11 +68,10 @@ def get_instagram_profile(event, context):
             print(f"ScrapingBee Classic failed: {e}. Falling back to Scrapingdog.")
             try:
                 # 2. Backup: Scrapingdog
-                params = {'api_key': secrets['scrapingdogApiKey'], 'username': username}
+                params = {'api_key': secrets['scrapingdogApiKey'], 'username': username} # Yahan sirf username bhej rahe hain
                 response_json = call_api("https://api.scrapingdog.com/instagram/profile", params, "Scrapingdog")
             except ScraperError as e2:
                 print(f"Scrapingdog also failed: {e2}. Falling back to ScrapingBee Premium.")
-                # 3. Final Backup: ScrapingBee Premium
                 params = {'api_key': secrets['scraperbeeApiKey'], 'url': f"https://www.instagram.com/{username}/?__a=1&__d=dis", 'premium_proxy': 'true'}
                 response_json = call_api('https://app.scrapingbee.com/api/v1', params, "ScrapingBee Premium")
 
@@ -92,27 +91,21 @@ def get_content_data(event, context):
     try:
         secrets = get_secrets()
         content_url = event.get('queryStringParameters', {}).get('url')
-
-        # --- Naya, Sahi Scraping Flow ---
-        response_json = None
+        if not content_url: return {'statusCode': 400, 'body': json.dumps({'error': 'Content URL is required.'})}
+        
+        # Content ke liye, hum sirf ScrapingBee ka istemal karenge kyunki Scrapingdog ko User ID chahiye
         try:
             params = {'api_key': secrets['scraperbeeApiKey'], 'url': f"{content_url}?__a=1&__d=dis"}
             response_json = call_api('https://app.scrapingbee.com/api/v1', params, "ScrapingBee Classic")
         except ScraperError as e:
-            print(f"ScrapingBee Classic failed: {e}. Falling back to Scrapingdog.")
-            try:
-                post_id = content_url.split('/p/')[-1].split('/')[0] if '/p/' in content_url else content_url.split('/reel/')[-1].split('/')[0]
-                params = {'api_key': secrets['scrapingdogApiKey'], 'id': post_id}
-                response_json = call_api("https://api.scrapingdog.com/instagram/posts", params, "Scrapingdog")
-            except ScraperError as e2:
-                print(f"Scrapingdog also failed: {e2}. Falling back to ScrapingBee Premium.")
-                params = {'api_key': secrets['scraperbeeApiKey'], 'url': f"{content_url}?__a=1&__d=dis", 'premium_proxy': 'true'}
-                response_json = call_api('https://app.scrapingbee.com/api/v1', params, "ScrapingBee Premium")
+            print(f"ScrapingBee Classic failed: {e}. Falling back to Premium.")
+            params = {'api_key': secrets['scraperbeeApiKey'], 'url': f"{content_url}?__a=1&__d=dis", 'premium_proxy': 'true'}
+            response_json = call_api('https://app.scrapingbee.com/api/v1', params, "ScrapingBee Premium")
+
+        shortcode_media = response_json.get('graphql', {}).get('shortcode_media', {})
+        if not shortcode_media: raise ScraperError("Content data not found.")
         
-        data = response_json.get('graphql', {}).get('shortcode_media', {}) if 'graphql' in response_json else response_json
-        if not data: raise ScraperError("Content data not found from any scraper.")
-        
-        formatted_data = {"data": {"media_type": "video" if data.get('is_video') else "image", "media_url": data.get('video_url') or data.get('display_url'), "thumbnail_url": data.get('display_url'), "caption": data.get('edge_media_to_caption', {}).get('edges', [{}])[0].get('node',{}).get('text', ''), "author": { "username": data.get('owner', {}).get('username'), "avatar_url": data.get('owner', {}).get('profile_pic_url')}}, "status": "ok"}
+        formatted_data = {"data": {"media_type": "video" if shortcode_media.get('is_video') else "image", "media_url": shortcode_media.get('video_url') or shortcode_media.get('display_url'), "thumbnail_url": shortcode_media.get('display_url'), "caption": shortcode_media.get('edge_media_to_caption', {}).get('edges', [{}])[0].get('node',{}).get('text', ''), "author": { "username": shortcode_media.get('owner', {}).get('username'), "avatar_url": shortcode_media.get('owner', {}).get('profile_pic_url')}}, "status": "ok"}
         return {'statusCode': 200, 'headers': {'Access-Control-Allow-Origin': '*'}, 'body': json.dumps(formatted_data)}
     except ScraperError as e:
         return {'statusCode': 404, 'headers': {'Access-Control-Allow-Origin': '*'}, 'body': json.dumps({'error': str(e)})}
