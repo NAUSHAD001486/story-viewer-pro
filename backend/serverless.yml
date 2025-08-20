@@ -29,48 +29,46 @@ plugins:
   - serverless-python-requirements
 
 custom:
-  cacheTableName: instagram-tool-final-table
+  cacheTableName: instagram-tool-cache-final # Naya naam taaki conflict na ho
   pythonRequirements:
     dockerizePip: non-linux
-    layer: true
-    noDeploy: [boto3, botocore]
+    # Hum sirf boto3 ko exclude karenge
+    noDeploy:
+      - boto3
+      - botocore
       
 functions:
-  # Token generate karne wala function (public, no authorizer)
   generateToken:
     handler: auth_handler.generate_token
-    layers:
-      - Ref: PythonRequirementsLambdaLayer
-    environment:
-      SECRET_NAME: "instagram-tool-secrets"
     events:
-      - httpApi:
-          path: /v1/auth/token
-          method: post
-
-  # Profile fetch karne wala function (private, authorizer ke saath)
+      - httpApi: { path: /v1/auth/token, method: post }
+          
   getProfile:
     handler: handler.get_instagram_profile
     environment:
       CACHE_TABLE_NAME: ${self:custom.cacheTableName}
-      CACHE_TTL_SECONDS: 1500
-      SECRET_NAME: "instagram-tool-secrets"
-    layers:
-      - Ref: PythonRequirementsLambdaLayer
+      CACHE_TTL_SECONDS: 2400 # 40 minutes
     events:
       - httpApi:
           path: /v1/profile
           method: get
           authorizer:
-            name: jwtAuthorizer # Authorizer yahan lagna chahiye
+            name: jwtAuthorizer
 
-  # Authorizer function
+  getContent:
+    handler: handler.get_content_data
+    environment:
+      CACHE_TABLE_NAME: ${self:custom.cacheTableName}
+      CACHE_TTL_SECONDS: 2400
+    events:
+      - httpApi:
+          path: /v1/content
+          method: get
+          authorizer:
+            name: jwtAuthorizer
+
   jwtAuthorizer:
     handler: auth_handler.authorize
-    layers:
-      - Ref: PythonRequirementsLambdaLayer
-    environment:
-      SECRET_NAME: "instagram-tool-secrets"
 
 resources:
   Resources:
@@ -78,7 +76,8 @@ resources:
       Type: AWS::DynamoDB::Table
       Properties:
         TableName: ${self:custom.cacheTableName}
-        AttributeDefinitions: [{AttributeName: username, AttributeType: S}]
-        KeySchema: [{AttributeName: username, KeyType: HASH}]
+        # Key ko 'id' banaya gaya hai, jo profile ke liye username aur content ke liye post id ho sakti hai
+        AttributeDefinitions: [{AttributeName: id, AttributeType: S}]
+        KeySchema: [{AttributeName: id, KeyType: HASH}]
         TimeToLiveSpecification: {AttributeName: ttl, Enabled: true}
         BillingMode: PAY_PER_REQUEST
